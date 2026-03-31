@@ -29,33 +29,43 @@
         <button @click="generatePDF" class="pdf-btn">📄 Скачать PDF отчет</button>
       </div>
 
-      <table class="user-table">
-        <thead>
-        <tr>
-          <th>ID</th>
-          <th>Имя</th>
-          <th>Статус</th>
-          <th>Действие</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr v-for="user in allUsers" :key="user.id">
-          <td>{{ user.id }}</td>
-          <td>{{ user.name }}</td>
-          <td>
-            <span :class="getStatusClass(user)">{{ getStatusText(user) }}</span>
-          </td>
-          <td>
-            <div v-if="user.role === 'student'">
-              <button v-if="!user.intern" @click="acceptToInternship(user.id)" class="action-btn intern-btn">На стажировку</button>
-              <button v-if="user.intern && !user.job" @click="acceptToJob(user.id)" class="action-btn job-btn">На работу</button>
-              <span v-if="user.job">✅ Трудоустроен</span>
-            </div>
-            <span v-else>—</span>
-          </td>
-        </tr>
-        </tbody>
-      </table>
+      <div class="table-container">
+        <h4 class="table-title">🎓 Студенты</h4>
+        <table class="user-table">
+          <thead>
+          <tr><th>ID</th><th>Имя</th><th>Статус</th><th>Действие</th></tr>
+          </thead>
+          <tbody>
+          <tr v-for="user in studentsOnly" :key="user.id">
+            <td>{{ user.id }}</td>
+            <td>{{ user.name }}</td>
+            <td><span :class="getStatusClass(user)">{{ getStatusText(user) }}</span></td>
+            <td>
+              <div v-if="!user.job">
+                <button v-if="!user.intern" @click="acceptToInternship(user.id)" class="action-btn intern-btn">На стажировку</button>
+                <button v-if="user.intern" @click="acceptToJob(user.id)" class="action-btn job-btn">На работу</button>
+              </div>
+              <span v-else>✅ Трудоустроен</span>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-container">
+        <h4 class="table-title">🏢 Компании</h4>
+        <table class="user-table company-style">
+          <thead>
+          <tr><th>ID</th><th>Название компании</th></tr>
+          </thead>
+          <tbody>
+          <tr v-for="user in companiesOnly" :key="user.id">
+            <td>{{ user.id }}</td>
+            <td>{{ user.name }}</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="add-user-section">
@@ -70,7 +80,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import api from './api';
 import RegistrationChart from './components/RegistrationChart.vue';
 import jsPDF from 'jspdf';
@@ -82,6 +92,10 @@ const stats = ref({
 });
 const allUsers = ref([]);
 const newUserName = ref('');
+
+// Списки для раздельных таблиц
+const studentsOnly = computed(() => allUsers.value.filter(u => u.role === 'student'));
+const companiesOnly = computed(() => allUsers.value.filter(u => u.role === 'company'));
 
 const fetchData = async () => {
   try {
@@ -97,7 +111,7 @@ const fetchData = async () => {
 const getStatusText = (user) => {
   if (user.job) return 'Работает';
   if (user.intern) return 'Стажер';
-  return user.role === 'company' ? 'Компания' : 'В поиске';
+  return 'В поиске';
 };
 
 const getStatusClass = (user) => {
@@ -122,47 +136,59 @@ const generatePDF = async () => {
     const doc = new jsPDF();
     const fontUrl = '/Roboto-Regular.ttf';
     const res = await fetch(fontUrl);
-
     let currentFont = "courier";
+
     if (res.ok) {
       const font = await res.arrayBuffer();
       const base64 = btoa(new Uint8Array(font).reduce((d, b) => d + String.fromCharCode(b), ''));
       doc.addFileToVFS("Roboto-Regular.ttf", base64);
       doc.addFont("Roboto-Regular.ttf", "Roboto", "normal");
-      doc.setFont("Roboto", "normal"); // Указываем normal явно
+      doc.setFont("Roboto", "normal");
       currentFont = "Roboto";
     }
 
     doc.setFontSize(18);
-    doc.text("CareerHub: Отчет", 14, 15);
+    doc.text("Отчет CareerHub:", 14, 15);
 
-    const tableRows = allUsers.value.map(u => [
+    // 1. ТАБЛИЦА СТУДЕНТОВ
+    doc.setFontSize(14);
+    doc.text("Студенты", 14, 25);
+
+    const studentRows = studentsOnly.value.map(u => [
       String(u.id),
       String(u.name),
-      u.role === 'student' ? 'Студент' : 'Компания',
       getStatusText(u)
     ]);
 
     autoTable(doc, {
-      head: [['ID', 'Имя', 'Роль', 'Статус']],
-      body: tableRows,
-      startY: 25,
-      styles: {
-        font: currentFont,
-        fontStyle: 'normal', // ОТКЛЮЧАЕМ жирный шрифт для всех ячеек
-        fontSize: 10
-      },
-      headStyles: {
-        font: currentFont,
-        fontStyle: 'normal', // ОТКЛЮЧАЕМ жирный шрифт для заголовков
-        fillColor: [52, 152, 219]
-      }
+      head: [['ID', 'Имя', 'Статус']],
+      body: studentRows,
+      startY: 30,
+      styles: { font: currentFont, fontStyle: 'normal', fontSize: 10 },
+      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [66, 184, 131] } // Зеленый для студентов
+    });
+
+    // 2. ТАБЛИЦА КОМПАНИЙ (начинается после первой таблицы)
+    const finalY = doc.lastAutoTable.finalY || 30;
+    doc.setFontSize(14);
+    doc.text("Компании", 14, finalY + 15);
+
+    const companyRows = companiesOnly.value.map(u => [
+      String(u.id),
+      String(u.name)
+    ]);
+
+    autoTable(doc, {
+      head: [['ID', 'Название компании']],
+      body: companyRows,
+      startY: finalY + 20,
+      styles: { font: currentFont, fontStyle: 'normal', fontSize: 10 },
+      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [52, 152, 219] } // Синий для компаний
     });
 
     doc.save(`CareerHub_Report_${new Date().toLocaleDateString()}.pdf`);
   } catch (err) {
-    console.error("Ошибка PDF:", err);
-    alert("Ошибка! Проверь консоль.");
+    console.error("Ошибка при создании раздельного отчета:", err);
   }
 };
 
@@ -170,26 +196,35 @@ onMounted(fetchData);
 </script>
 
 <style scoped>
-/* Стили остаются прежними */
 .dashboard { font-family: sans-serif; text-align: center; padding: 20px; color: #fff; background: #121212; min-height: 100vh; }
 .stats-container { display: flex; justify-content: center; gap: 15px; margin-bottom: 30px; }
 .card { background: #1e1e1e; padding: 15px; border-radius: 10px; border: 1px solid #333; min-width: 150px; }
 .number { font-size: 24px; font-weight: bold; }
 .highlight { color: #42b883; }
 .blue-text { color: #3498db; }
+
 .charts-grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-bottom: 30px; }
 .chart-box { background: #1e1e1e; padding: 15px; border-radius: 12px; width: 30%; min-width: 300px; border: 1px solid #333; }
+
 .management-section { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; max-width: 1000px; margin: 0 auto; }
-.management-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.management-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+
+.table-container { margin-bottom: 40px; text-align: left; }
+.table-title { color: #aaa; margin-bottom: 10px; font-size: 1.1rem; border-left: 4px solid #3498db; padding-left: 10px; }
+
 .user-table { width: 100%; border-collapse: collapse; }
-.user-table th, .user-table td { padding: 10px; border-bottom: 1px solid #333; text-align: left; }
+.user-table th, .user-table td { padding: 12px; border-bottom: 1px solid #333; text-align: left; }
+.company-style { border-left: 2px solid #3498db; }
+
 .status-wait { color: #f1c40f; }
 .status-ready { color: #3498db; font-weight: bold; }
 .status-job { color: #42b883; font-weight: bold; }
+
 .pdf-btn { background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; }
 .action-btn { border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; color: white; margin-right: 5px; }
 .intern-btn { background: #3498db; }
 .job-btn { background: #42b883; }
+
 .add-user-section { margin-top: 30px; padding: 20px; background: #1e1e1e; border-radius: 12px; display: inline-block; }
 input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; margin-bottom: 10px; width: 200px; }
 .add-btn { padding: 10px 20px; border: none; border-radius: 5px; color: white; cursor: pointer; margin: 0 5px; font-weight: bold; }
