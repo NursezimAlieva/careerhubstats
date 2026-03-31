@@ -9,15 +9,27 @@
     </div>
 
     <div class="charts-grid">
-      <div class="chart-box">
+      <div class="chart-box chart-item pie-box">
+        <h3>Статусы студентов</h3>
+        <StatusPieChart
+            v-if="stats.chartLabels.length > 0"
+            :searching="currentSearching"
+            :interns="currentInterns"
+            :working="currentWorking"
+        />
+      </div>
+
+      <div class="chart-box chart-item">
         <h3>Регистрации</h3>
         <RegistrationChart v-if="stats.chartLabels.length > 0" :labels="stats.chartLabels" :studentData="stats.studentData" :companyData="stats.companyData" />
       </div>
-      <div class="chart-box">
+
+      <div class="chart-box chart-item">
         <h3>Стажировки</h3>
         <RegistrationChart v-if="stats.chartLabels.length > 0" :labels="stats.chartLabels" :studentData="stats.internshipData" :companyData="[]" />
       </div>
-      <div class="chart-box">
+
+      <div class="chart-box chart-item">
         <h3>Работа</h3>
         <RegistrationChart v-if="stats.chartLabels.length > 0" :labels="stats.chartLabels" :studentData="stats.jobData" :companyData="[]" />
       </div>
@@ -83,6 +95,7 @@
 import { ref, onMounted, computed } from 'vue';
 import api from './api';
 import RegistrationChart from './components/RegistrationChart.vue';
+import StatusPieChart from './components/StatusPieChart.vue';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -93,9 +106,12 @@ const stats = ref({
 const allUsers = ref([]);
 const newUserName = ref('');
 
-// Списки для раздельных таблиц
 const studentsOnly = computed(() => allUsers.value.filter(u => u.role === 'student'));
 const companiesOnly = computed(() => allUsers.value.filter(u => u.role === 'company'));
+
+const currentWorking = computed(() => stats.value.jobData.length > 0 ? stats.value.jobData[stats.value.jobData.length - 1] : 0);
+const currentInterns = computed(() => stats.value.internshipData.length > 0 ? stats.value.internshipData[stats.value.internshipData.length - 1] : 0);
+const currentSearching = computed(() => stats.value.totalStudents - currentInterns.value - currentWorking.value);
 
 const fetchData = async () => {
   try {
@@ -103,9 +119,7 @@ const fetchData = async () => {
     stats.value = statRes.data;
     const usersRes = await api.get('/users');
     allUsers.value = usersRes.data;
-  } catch (error) {
-    console.error("Ошибка загрузки:", error);
-  }
+  } catch (error) { console.error("Ошибка загрузки:", error); }
 };
 
 const getStatusText = (user) => {
@@ -148,48 +162,33 @@ const generatePDF = async () => {
     }
 
     doc.setFontSize(18);
-    doc.text("Отчет CareerHub:", 14, 15);
+    doc.text("Отчет CareerHub", 14, 15);
 
-    // 1. ТАБЛИЦА СТУДЕНТОВ
     doc.setFontSize(14);
     doc.text("Студенты", 14, 25);
-
-    const studentRows = studentsOnly.value.map(u => [
-      String(u.id),
-      String(u.name),
-      getStatusText(u)
-    ]);
-
+    const studentRows = studentsOnly.value.map(u => [String(u.id), String(u.name), getStatusText(u)]);
     autoTable(doc, {
       head: [['ID', 'Имя', 'Статус']],
       body: studentRows,
       startY: 30,
       styles: { font: currentFont, fontStyle: 'normal', fontSize: 10 },
-      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [66, 184, 131] } // Зеленый для студентов
+      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [66, 184, 131] }
     });
 
-    // 2. ТАБЛИЦА КОМПАНИЙ (начинается после первой таблицы)
     const finalY = doc.lastAutoTable.finalY || 30;
     doc.setFontSize(14);
     doc.text("Компании", 14, finalY + 15);
-
-    const companyRows = companiesOnly.value.map(u => [
-      String(u.id),
-      String(u.name)
-    ]);
-
+    const companyRows = companiesOnly.value.map(u => [String(u.id), String(u.name)]);
     autoTable(doc, {
       head: [['ID', 'Название компании']],
       body: companyRows,
       startY: finalY + 20,
       styles: { font: currentFont, fontStyle: 'normal', fontSize: 10 },
-      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [52, 152, 219] } // Синий для компаний
+      headStyles: { font: currentFont, fontStyle: 'normal', fillColor: [52, 152, 219] }
     });
 
     doc.save(`CareerHub_Report_${new Date().toLocaleDateString()}.pdf`);
-  } catch (err) {
-    console.error("Ошибка при создании раздельного отчета:", err);
-  }
+  } catch (err) { console.error(err); }
 };
 
 onMounted(fetchData);
@@ -203,8 +202,34 @@ onMounted(fetchData);
 .highlight { color: #42b883; }
 .blue-text { color: #3498db; }
 
-.charts-grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-bottom: 30px; }
-.chart-box { background: #1e1e1e; padding: 15px; border-radius: 12px; width: 30%; min-width: 300px; border: 1px solid #333; }
+/* СЕТКА 2x2 */
+.charts-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  max-width: 1200px;
+  margin: 0 auto 30px auto;
+}
+
+.chart-item {
+  background: #1e1e1e;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #333;
+  width: calc(50% - 20px); /* Ровно по два в ряд */
+  min-width: 450px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-item h3 {
+  margin-bottom: 20px;
+  font-size: 1.2rem;
+}
+
+.pie-box { border-color: #42b883; }
 
 .management-section { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; max-width: 1000px; margin: 0 auto; }
 .management-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
